@@ -1,11 +1,5 @@
 import numpy as np
-import time
-import Kernels
-import Likelihood
-import GradientOptimizers
-import AcquisitionFunctions
-import EvolutionaryOptimizers
-
+from scipy.linalg import cholesky
 
 
 class SingleTaskGP:
@@ -13,10 +7,11 @@ class SingleTaskGP:
 
         self.train_x = train_x
         self.train_y = train_y
-        self.kernel = kernel #assumes to be conditioned on training data
+        self.kernel = kernel #assumed to be conditioned on training data
 
         self.covar = kernel(kernel.theta)
-        self.L = np.linalg.cholesky(self.covar + 1e-5*np.eye(self.covar.shape[0]))
+        self.L = cholesky(self.covar + 1e-5*np.eye(self.covar.shape[0]), lower=True)
+
         self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.train_y))
 
     def predict(self, x_test):

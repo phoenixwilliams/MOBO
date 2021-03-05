@@ -55,7 +55,6 @@ class nExpectedImprovement:
 
 class nProbabilityofImprovement:
     def __init__(self, gaussian_process, best_val, eps):
-        self.kernel = kernel
         self.gp = gaussian_process
         self.best_val = best_val
         self.eps = eps

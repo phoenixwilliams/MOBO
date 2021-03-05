@@ -1,5 +1,5 @@
-import  numpy as np
-
+import numpy as np
+from scipy.linalg import cholesky
 
 
 class negativeGaussianLogLiklihood:
@@ -12,7 +12,7 @@ class negativeGaussianLogLiklihood:
     def __call__(self, theta):
         k = self.kernel(theta)
         k = k + 1e-5*np.eye(k.shape[0])
-        L = np.linalg.cholesky(k)
+        L = cholesky(k)
         alpha = np.linalg.solve(L.T, np.linalg.solve(L, self.y_train))
 
         logp = -0.5*self.y_train.T.dot(alpha) - sum(np.log(np.diag(L))) \
@@ -24,7 +24,7 @@ class negativeGaussianLogLiklihood:
     def derivative(self, theta):
         k = self.kernel(theta)
         k = k + 1e-5*np.eye(k.shape[0])
-        L = np.linalg.cholesky(k)
+        L = cholesky(k)
         ink = np.linalg.solve(L.T, np.eye(L.shape[0]))
         d = len(theta)
 

@@ -20,11 +20,12 @@ def show_fitted_gp_and_acquisition():
     import matplotlib.pyplot as plt
 
     # Set the bounds for the RBF Kernel parameters
-    bounds = np.asarray([[1e-1, 10], [1e-1, 10], [1e-4, 1]])
+    bounds = np.asarray([[1e-1, 100], [1e-1, 100], [1e-4, 1]])
     problem = Sphere()
 
+    rng = np.random.RandomState(0) #seeded the random initial dataset
     # Generate Dataset of (x,y) values
-    x = np.random.uniform(-50, 50, size=(3, 1))
+    x = rng.uniform(-50, 50, size=(11, 1))
     y = np.asarray([problem(xi) for xi in x])
 
     # Instantiate the Kernel and likelihood used to optimize the kernel parameters
@@ -32,7 +33,8 @@ def show_fitted_gp_and_acquisition():
     likelihood = negativeGaussianLogLiklihood(kernel, y)
     adamopt = AdamOptimizer(likelihood, alpha=1e-2)
     adamopt.set_initial_point(bounds)
-    theta, score = adamopt.optimize(500)
+    theta, score = adamopt.optimize(1000, 1)
+
     kernel.set_theta(theta)
 
     # Initialize the Gaussian Process with the dataset and optimized Kernel
@@ -77,21 +79,21 @@ def show_fitted_gp_and_acquisition():
 
     # Plot acquisition function and minimum point returned by the acquisition optimization algorithm
     plt.plot(x, fitness, 'o')
-    plt.show()
+    #plt.show()
 
 
 def example_bayesian_optimization():
     # Set the bounds for the RBF Kernel parameters
-    bounds = np.asarray([[1e-1, 10], [1e-1, 10], [1e-4, 1]])
+    bounds = np.asarray([[1e-1, 100], [1e-1, 100], [1e-4, 1]])
     problem = Sphere()
 
-    dimension = 2
+    dimension = 5
 
     problem_bounds = [-5, 5]
     diff = problem_bounds[1] - problem_bounds[0]
 
     # Generate Normalized Dataset of (x,y) values
-    x = np.random.uniform(0, 1, size=(20, dimension))
+    x = np.random.uniform(0, 1, size=(54, dimension))
 
     y = np.asarray([problem(xi*diff + problem_bounds[0]) for xi in x])
 
@@ -113,15 +115,15 @@ def example_bayesian_optimization():
 
     best_values = [min(y)]
 
-    for i in range(50):
-        print(i)
+    for i in range(10):
+        print(i, "best current found value:", best_values[-1])
 
         # Instantiate the Kernel and likelihood used to optimize the kernel parameters
         kernel = RBF(x, x)
         likelihood = negativeGaussianLogLiklihood(kernel, y)
         adamopt = AdamOptimizer(likelihood, alpha=1e-2)
         adamopt.set_initial_point(bounds)
-        theta, _ = adamopt.optimize(1000, 2)
+        theta, _ = adamopt.optimize(5000, 1)
         kernel.set_theta(theta)
 
         # Initialize the Gaussian Process with the dataset and optimized Kernel
@@ -151,6 +153,5 @@ if __name__ == "__main__":
 
     #show_fitted_gp_and_acquisition()
     process = example_bayesian_optimization()
-
     plt.plot(process)
     plt.show()
