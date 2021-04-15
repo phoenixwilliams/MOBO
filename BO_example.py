@@ -5,6 +5,7 @@ from Kernels import RBF
 from Likelihood import negativeGaussianLogLiklihood
 from GradientOptimizers import AdamOptimizer
 import numpy as np
+from scipy.optimize import minimize
 
 class Sphere:
     """
@@ -20,27 +21,31 @@ def show_fitted_gp_and_acquisition():
     import matplotlib.pyplot as plt
 
     # Set the bounds for the RBF Kernel parameters
-    bounds = np.asarray([[1e-1, 100], [1e-1, 100], [1e-4, 1]])
+    bounds = np.asarray([[1e-4, 100], [1e-4, 100], [1e-4, 1]])
     problem = Sphere()
 
-    rng = np.random.RandomState(0) #seeded the random initial dataset
+    rng = np.random.RandomState(0)
     # Generate Dataset of (x,y) values
-    x = rng.uniform(-50, 50, size=(11, 1))
+    x = rng.uniform(-100, 100, size=(10, 1))
     y = np.asarray([problem(xi) for xi in x])
 
     # Instantiate the Kernel and likelihood used to optimize the kernel parameters
-    kernel = RBF(x, x)
-    likelihood = negativeGaussianLogLiklihood(kernel, y)
+    kernel = RBF()
+    gp = SingleTaskGP(x, y, kernel)
+    kernel.set_sqdist(x, x)
+    gp.kernel.train()
+
+    likelihood = negativeGaussianLogLiklihood(gp)
     adamopt = AdamOptimizer(likelihood, alpha=1e-2)
     adamopt.set_initial_point(bounds)
-    theta, score = adamopt.optimize(1000, 1)
-
-    kernel.set_theta(theta)
+    theta, score = adamopt.optimize(2000, 1)
+    gp.set_params(theta)
+    gp.initialize() # Setting up the model using the updated kernel parameters
 
     # Initialize the Gaussian Process with the dataset and optimized Kernel
-    gp = SingleTaskGP(x, y, kernel)
-    xtest = np.linspace(-50, 50, 500)
+    xtest = np.linspace(-100, 100, 500)
     xtest = np.asarray([[xi] for xi in xtest])
+    gp.kernel.eval()
     mean, var = gp.predict(xtest)
 
     # Plotting dataset and Gaussian Process Prediction
@@ -84,18 +89,17 @@ def show_fitted_gp_and_acquisition():
 
 def example_bayesian_optimization():
     # Set the bounds for the RBF Kernel parameters
-    bounds = np.asarray([[1e-1, 100], [1e-1, 100], [1e-4, 1]])
+    bounds = np.asarray([[1e-2, 1e+2], [1e-2, 1e+2], [1e-4, 1]])
     problem = Sphere()
 
-    dimension = 5
+    dimension = 10
 
-    problem_bounds = [-5, 5]
-    diff = problem_bounds[1] - problem_bounds[0]
+    problem_bounds = [-50, 50]
 
     # Generate Normalized Dataset of (x,y) values
-    x = np.random.uniform(0, 1, size=(54, dimension))
+    x = np.random.uniform(problem_bounds[0], problem_bounds[1], size=(11*dimension, dimension))
 
-    y = np.asarray([problem(xi*diff + problem_bounds[0]) for xi in x])
+    y = np.asarray([problem(xi) for xi in x])
 
     # Defining Differential Optimization Algorithm design
     mutant_params = {
@@ -119,15 +123,20 @@ def example_bayesian_optimization():
         print(i, "best current found value:", best_values[-1])
 
         # Instantiate the Kernel and likelihood used to optimize the kernel parameters
-        kernel = RBF(x, x)
-        likelihood = negativeGaussianLogLiklihood(kernel, y)
+        # Instantiate the Kernel and likelihood used to optimize the kernel parameters
+        kernel = RBF()
+        gp = SingleTaskGP(x, y, kernel)
+        kernel.set_sqdist(x, x)
+        gp.kernel.train()
+
+        likelihood = negativeGaussianLogLiklihood(gp)
         adamopt = AdamOptimizer(likelihood, alpha=1e-2)
         adamopt.set_initial_point(bounds)
-        theta, _ = adamopt.optimize(5000, 1)
-        kernel.set_theta(theta)
+        theta, score = adamopt.optimize(1000, 2)
+        gp.set_params(theta)
+        gp.initialize()  # Setting up the model using the updated kernel parameters
+        gp.kernel.eval() # Put it in eval mode for acquisition optmization
 
-        # Initialize the Gaussian Process with the dataset and optimized Kernel
-        gp = SingleTaskGP(x, y, kernel)
 
         # Initialize acquisition function
         acq = nExpectedImprovement(gp, min(y), 0.01)
@@ -136,7 +145,7 @@ def example_bayesian_optimization():
         new_point, _ = de.optimize(acq)
 
         # Ensure that the new_point output type is matching your custom problem
-        val = problem(new_point*diff + problem_bounds[0])
+        val = problem(new_point)
 
         # Update dataset
         x = np.concatenate((x, [new_point]), axis=0)

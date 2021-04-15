@@ -1,81 +1,89 @@
 import numpy as np
-import itertools
+
+
+class IndexKernel:
+    def __init__(self, x_kernel, f_kernel):
+        self.x_kernel = x_kernel # Data kernel
+        self.f_kernel = f_kernel # Function kernel
+        self.train_mode = False
+
+    def train(self):
+        self.x_kernel.train()
+
+    def eval(self):
+        self.x_kernel.eval()
+
+    def set_sqdist(self, x, x_):
+        self.x_kernel.set_sqdit(x, x_)
+
+    def set_params(self, theta):
+        """
+        We take the first k values as the parameters for the dataset kernel
+        """
+        self.x_kernel.set_params(theta[:self.x_kernel.num_params])
+        self.f_kernel.set_params(theta[self.x_kernel.num_params:])
+
+    def __call__(self, x1, x2, i1, i2):
+        k = self.x_kernel(x1, x2)
+        a = self.f_kernel()
+        k_f = np.zeros(shape=(len(i1), len(i2)))
+
+        for i in range(k_f.shape[0]):
+            for j in range(k_f.shape[1]):
+                k_f[i][j] = a[i1[i]][i2[j]]
+
+        return k * k_f
+
 
 class ICM:
-    def __init__(self, num_tasks, bounds):
+    def __init__(self, num_tasks, r):
         # The number r can be fully characterized by the length of bounds
         self.num_tasks = num_tasks
-        self.bounds = bounds
         self.a = None
-
-    def initial_matrix(self):
-        self.a = []
-        for i in range(len(self.bounds)):
-            self.a.append(np.random.uniform(self.bounds[i][0], self.bounds[i][1], size=(self.num_tasks,)))
+        self.r = r
 
     def __call__(self):
-
         b = np.outer(self.a[0], self.a[0].T)
         for i in range(1, len(self.a)):
             b += np.outer(self.a[i], self.a[i].T)
 
         return b
 
-
-class IndexKernel:
-    def __init__(self, i, i_, num_tasks):
-        self.i = i
-        self.i_ = i_
-        self.num_tasks = num_tasks
-
-        self.index_matrix = np.asarray([[[id1, id2] for id1 in self.i] for id2 in self.i_])
-
-
-    def __call__(self, lcm):
-        b = lcm()
-        index_b = np.zeros((self.index_matrix.shape[0], self.index_matrix.shape[1]))
-
-        for i in range(self.index_matrix.shape[0]):
-            for j in range(self.index_matrix.shape[1]):
-                #print(self.index_matrix[i][j][0], self.index_matrix[i][j][1])
-                index_b[i][j] = b[self.index_matrix[i][j][0]][self.index_matrix[i][j][1]]
-
-        return np.asarray(index_b)
-
-
+    def set_params(self, a_):
+        self.a = np.reshape(a_, newshape=(self.r, self.num_tasks))
 
 
 class RBF:
-
-    def __init__(self, x, x_):
-        self.x = x
-        self.x_ = x_
+    def __init__(self):
         self.theta = None
-        self.sqdist = np.sum(self.x ** 2, 1).reshape(-1, 1) \
-                               + np.sum(self.x_ ** 2, 1) - 2 * np.dot(self.x, self.x_.T)
+        self.sqdist = None
+        self.train_mode = False
+        self.num_params = 3
 
-    def set_theta(self, theta):
+    def train(self):
+        self.train_mode = True
+
+    def eval(self):
+        self.train_mode = False
+
+    def set_sqdist(self, x, x_):
+        self.sqdist = np.sum(x ** 2, 1).reshape(-1, 1) \
+                               + np.sum(x_ ** 2, 1) - 2 * np.dot(x, x_.T)
+
+    def set_params(self, theta):
         self.theta = theta
 
-    def covar(self, x1, x2):
-        sigma_f, sigma_l, sigma_n = self.theta[0], self.theta[1], self.theta[2]
-        sqdist = np.sum(x1 ** 2, 1).reshape(-1, 1) + np.sum(x2 ** 2, 1) - 2 * np.dot(x1, x2.T)
-        k = (sigma_f ** 2) * np.exp(((-1 / (2*(sigma_l ** 2)))) * sqdist)
+    def __call__(self, x, x_):
 
-        return k
+        if self.train_mode:
+            sigma_f, sigma_l, sigma_n = self.theta[0], self.theta[1], self.theta[2]
+            k = (sigma_f ** 2) * np.exp(((-1 / (2*(sigma_l ** 2)))) * self.sqdist)
+            k += (sigma_n**2)*np.eye(k.shape[0])
 
-    def predict(self, x_):
-        sigma_f, sigma_l, sigma_n = self.theta[0], self.theta[1], self.theta[2]
-        sqdist = np.sum(self.x ** 2, 1).reshape(-1, 1) + np.sum(x_ ** 2, 1) - 2 * np.dot(self.x, x_.T)
-        k = (sigma_f ** 2) * np.exp(((-1 / (2*(sigma_l ** 2)))) * sqdist)
-        k += (sigma_n**2) * np.eye(k.shape[0])
-
-        return k
-
-    def __call__(self, theta):
-        sigma_f, sigma_l, sigma_n = theta[0], theta[1], theta[2]
-        k = (sigma_f ** 2) * np.exp(((-1 / (2*(sigma_l ** 2)))) * self.sqdist)
-        k += (sigma_n**2)*np.eye(k.shape[0])
+        else:
+            sqdist = np.sum(x ** 2, 1).reshape(-1, 1) + np.sum(x_ ** 2, 1) - 2 * np.dot(x, x_.T)
+            sigma_f, sigma_l, sigma_n = self.theta[0], self.theta[1], self.theta[2]
+            k = (sigma_f ** 2) * np.exp(((-1 / (2 * (sigma_l ** 2)))) * sqdist)
 
         return k
 
@@ -84,34 +92,28 @@ class RBF:
         # Computes the derivative for each theta with dataset x, x_
 
         sigma_f, sigma_l, sigma_n = theta[0], theta[1], theta[2]
-        k_ = np.exp(((-1 / (2*(sigma_l ** 2)))) * self.sqdist)
+        k_ = np.exp((-1 / (2 * (sigma_l ** 2))) * self.sqdist)
         return 2*sigma_f*k_, (sigma_f ** 2) * k_ * self.sqdist*(sigma_l**-3), 2*sigma_n*np.eye(k_.shape[0])
 
 
-    def input_test_deriv(self, x_):
-        sigma_f, sigma_l, sigma_n = self.theta[0], self.theta[1], self.theta[2]
-        sqdist = np.sum(self.x ** 2, 1).reshape(-1, 1) + np.sum(x_ ** 2, 1) - 2 * np.dot(self.x, x_.T)
-        k = (sigma_f ** 2) * np.exp(((-1 / (2 * (sigma_l ** 2)))) * sqdist)
-        k = k * (-1/(2*sigma_l**2) * (2*x_ - 2*self.x))
-
-        return k
-
-
 if __name__ == "__main__":
-    import time
-    #i = np.random.randint(0, 2, size=(10,))
-    #icm = ICM(2, [[0, 1]])
-    #icm.initial_matrix()
-    #index_kernel = IndexKernel(i, i, 2)
-    #b = index_kernel(icm)
+    from Likelihood import negativeGaussianLogLiklihood
 
-    dataset = np.random.uniform(-50, 50, size=(1000, 20))
-    rbf = RBF(dataset, dataset)
-    start = time.time()
-    rbf([1, 1, 1])
-    print(time.time() - start)
+    i = np.random.randint(0, 2, size=(10,))
+    icm = ICM(2, [[0, 1]])
+    icm.initial_matrix()
 
+    dataset = np.random.uniform(-50, 50, size=(10, 20))
+    rbf = RBF()
+    rbf.set_sqdist(dataset, dataset)
+    rbf.set_params([10, 10, 1])
+    rbf.eval()
 
+    x_test = np.random.uniform(-50, 50, size=(2, 20))
+    itest = np.random.randint(0, 1, size=(2,))
+    k = IndexKernel(rbf, icm)
+
+    k.set_params([1, 1, 1, 1, 1])
 
 
 
